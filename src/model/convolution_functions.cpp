@@ -294,7 +294,8 @@ CudnnConvHandle InitCudnn(const Tensor &input, const ConvHandle ch){
 
 }
 
-Tensor CudnnConvForward(Tensor x, Tensor W, Tensor b, const ConvHandle ch, const CudnnConvHandle cch){
+Tensor CudnnConvForward(const Tensor x, const Tensor W, const Tensor b,
+                        const ConvHandle ch, const CudnnConvHandle cch){
     CHECK_EQ(x.device()->lang(), kCuda);
     CHECK_EQ(x.nDim(), 4u);
     CHECK_EQ(x.shape()[0],cch.batchsize);
@@ -333,7 +334,7 @@ Tensor CudnnConvForward(Tensor x, Tensor W, Tensor b, const ConvHandle ch, const
 }
 
 // input Tensor W for Reset dW purpose, can avoid this later.
-Tensor CudnnConvBackwardW(Tensor dy, Tensor x, Tensor W, CudnnConvHandle cch){
+Tensor CudnnConvBackwardW(const Tensor dy, const Tensor x, const Tensor W, const CudnnConvHandle cch){
     CHECK_EQ(dy.device()->lang(), kCuda);
     CHECK_EQ(dy.nDim(), 4u);
 
@@ -356,7 +357,7 @@ Tensor CudnnConvBackwardW(Tensor dy, Tensor x, Tensor W, CudnnConvHandle cch){
 }
 
 // input Tensor b for Reset db purpose, can avoid this later.
-Tensor CudnnConvBackwardb(Tensor dy, Tensor b, CudnnConvHandle cch){
+Tensor CudnnConvBackwardb(const Tensor dy, const Tensor b, const CudnnConvHandle cch){
     CHECK_EQ(dy.device()->lang(), kCuda);
     CHECK_EQ(dy.nDim(), 4u);
 
@@ -374,7 +375,7 @@ Tensor CudnnConvBackwardb(Tensor dy, Tensor b, CudnnConvHandle cch){
 }
 
 // input Tensor x for Reset dx purpose, can avoid this later.
-Tensor CudnnConvBackwardx(Tensor dy, Tensor W, Tensor x, CudnnConvHandle cch){
+Tensor CudnnConvBackwardx(const Tensor dy, const Tensor W, const Tensor x, const CudnnConvHandle cch){
     CHECK_EQ(dy.device()->lang(), kCuda);
     CHECK_EQ(dy.nDim(), 4u);
 
