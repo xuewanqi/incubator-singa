@@ -36,6 +36,7 @@ from singa import layer
 from singa import net as ffnet
 from singa import device
 from singa import tensor
+
 from rafiki.agent import Agent, MsgType
 
 
@@ -147,7 +148,7 @@ def create_net(shape, weight_path='bvlc_googlenet.pickle'):
     # layer
     for key, val in zip(net.param_names(), net.param_values()):
         # print key
-        if key == 'loss3/classifier_weight':
+        if key == 'loss3/classifier_weight' or key == 'loss3/classifier/weight':
             tmp = tensor.to_numpy(val)
             tmp = tmp.reshape(tmp.shape[::-1])
             val.copy_from_numpy(np.transpose(tmp))
@@ -186,7 +187,8 @@ def serve(agent, use_cpu, parameter_file, topk=5):
                 img[:, :, 2] -= 103.939
                 img[:,:,[0,1,2]] = img[:,:,[2,1,0]]
                 img = img.transpose((2, 0, 1))
-                img = img[:,(height-224)//2:(height+224)//2,(width-224)//2:(width+224)//2]
+                img = img[:, (height-224)//2:(height+224)//2,\
+                          (width-224)//2:(width+224)//2]
                 images = np.expand_dims(img, axis=0)
 
                 x = tensor.from_numpy(images.astype(np.float32))
@@ -216,7 +218,7 @@ def serve(agent, use_cpu, parameter_file, topk=5):
 def main():
     try:
         # Setup argument parser
-        parser = ArgumentParser(description="GooleNet for image classification")
+        parser = ArgumentParser(description="GoogleNet for image classification")
         parser.add_argument("-p", "--port", default=9999, help="listen port")
         parser.add_argument("-C", "--use_cpu", action="store_true")
         parser.add_argument("--parameter_file", default="bvlc_googlenet.pickle",

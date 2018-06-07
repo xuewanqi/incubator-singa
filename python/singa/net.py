@@ -18,6 +18,7 @@
 Nerual net class for constructing the nets using layers and providing access
 functions for net info, e.g., parameters.
 
+
 Example usages::
 
     from singa import net as ffnet
@@ -59,6 +60,7 @@ from __future__ import absolute_import
 from builtins import zip
 from builtins import str
 from builtins import object
+import numpy as np
 import os
 
 from .proto.model_pb2 import kTrain, kEval
@@ -175,13 +177,13 @@ class FeedForwardNet(object):
         return [spec.name for spec in self.param_specs()]
 
     def train(self, x, y):
-	'''Run BP for one iteration.
-	This method is deprecated. It is only kept for backward compatibility.
-	The name of this method is confusing since it does not update parameters.
-	Please use backprob() instead.
-	The back progagation algorithm computes gradients but it does not train.
+        '''Run BP for one iteration.
+        This method is deprecated. It is only kept for backward compatibility.
+        The name of this method is confusing since it does not update parameters.
+        Please use backprob() instead.
+        The back progagation algorithm computes gradients but it does not train.
         '''
-        return backprob(x, y)
+        return self.backprob(x, y)
 
     def backprob(self, x, y):
         '''Run BP for one iteration.
@@ -237,15 +239,21 @@ class FeedForwardNet(object):
         output layers.
 
         Currently only support nets with a single output layer
+        TODO(yujian) to handle multiple outputs from the network
 
         Args:
             x: input data, a single input Tensor or a dict: layer name -> Tensor
 
         Returns:
             a single output tensor as the prediction result.
+
         '''
+
         xx = self.forward(kEval, x)
-        return tensor.softmax(xx)
+        if type(xx) is dict:
+            return tensor.softmax(list(xx.values())[0])
+        else:
+            return tensor.softmax(xx)
 
     def topo_sort(self, layers, src_of_layer):
         '''Topology sort of layers.
@@ -295,7 +303,8 @@ class FeedForwardNet(object):
                 dictionary: layer name -> output tensor(s)
         '''
         if self.ordered_layers is None:
-            self.ordered_layers = self.topo_sort(self.layers, self.src_of_layer)
+            self.ordered_layers = self.topo_sort(
+                self.layers, self.src_of_layer)
         if type(x) is dict:
             input_of_layer = x
         else:
@@ -326,7 +335,7 @@ class FeedForwardNet(object):
                 outs = output_of_layer[src.name]
                 if type(outs) == list:
                     assert len(outs) > 0, \
-                            'the output from layer %s is empty' % src.name
+                        'the output from layer %s is empty' % src.name
                     inputs.append(outs[0])
                     outs.pop(0)
                     if len(outs) == 0:
@@ -406,7 +415,7 @@ class FeedForwardNet(object):
                 outputs = output_of_layer[dst.name]
                 if type(outputs) == list:
                     assert len(outputs) > 0, \
-                            'the gradient from layer %s is empty' % dst.name
+                        'the gradient from layer %s is empty' % dst.name
                     inputs.append(outputs[0])
                     outputs.pop(0)
                 else:
@@ -418,7 +427,7 @@ class FeedForwardNet(object):
             outs, pgrads = cur.backward(kTrain, inputs)
             if verbose:
                 disp_src = '+'.join(
-                        [dst.name for dst in self.dst_of_layer[cur.name]])
+                    [dst.name for dst in self.dst_of_layer[cur.name]])
                 disp_src += '-->' + cur.name
                 if type(outs) is list:
                     print('%s: %s' % (disp_src,
@@ -462,6 +471,8 @@ class FeedForwardNet(object):
             if f.endswith('.bin'):
                 f = f[0:-4]
             sp = snapshot.Snapshot(f, True, buffer_size)
+            v = tensor.from_numpy(np.array([__version__]))
+            params['SINGA_VERSION'] = v
             for (name, val) in zip(self.param_names(), self.param_values()):
                 val.to_host()
                 sp.write(name, val)
@@ -477,7 +488,7 @@ class FeedForwardNet(object):
             if version < 1101:
                 idx = name.rfind('/')
                 assert idx > 0, '/ must be in the parameter name'
-                name = name[:idx] + '_' + name[idx+1:]
+                name = name[:idx] + '_' + name[idx + 1:]
             return name
 
         if use_pickle:
@@ -491,7 +502,7 @@ class FeedForwardNet(object):
                     f = f + '.pickle'
             assert os.path.exists(f), 'file not exists %s w/o .pickle' % f
             with open(f, 'rb') as fd:
-                params = pickle.load(fd)
+                params = pickle.load(fd, encoding='iso-8859-1')
         else:
             print('NOTE: If your model was saved using pickle, '
                   'then set use_pickle=True for loading it')
@@ -499,9 +510,13 @@ class FeedForwardNet(object):
                 f = f[0:-4]
             sp = snapshot.Snapshot(f, False, buffer_size)
             params = sp.read()
-        version = __version__
+
         if 'SINGA_VERSION' in params:
             version = params['SINGA_VERSION']
+            if isinstance(version, tensor.Tensor):
+                version = tensor.to_numpy(version)[0]
+        else:
+            version = 1100
         for name, val in zip(self.param_names(), self.param_values()):
             name = get_name(name)
             if name not in params:
@@ -515,5 +530,5 @@ class FeedForwardNet(object):
             except AssertionError as err:
                 print('Error from copying values for param: %s' % name)
                 print(('shape of param vs checkpoint',
-                      val.shape, params[name].shape))
+                       val.shape, params[name].shape))
                 raise err

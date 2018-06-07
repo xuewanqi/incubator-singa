@@ -94,7 +94,7 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/python/singa/proto)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/python/rafiki)
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/src/api)
 
-IF(PYTHON3)
+IF(USE_PYTHON3)
 	SET(SWIG_PYTHON3 "-py3")
 ELSE()
 	SET(SWIG_PYTHON3 "")
@@ -113,6 +113,12 @@ file(GLOB_RECURSE python_source_files RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.py)
 create_symlinks(${python_source_files})
 
 
+execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} -c "from __future__ import print_function; import numpy; print(numpy.get_include())"
+    OUTPUT_VARIABLE NUMPY_INCLUDE_DIR)
+
+#message(status "numpy path ${NUMPY_INCLUDE_DIR}")
+
 IF(USE_CUDA)
 # remain this custom command to avoid cuda objs can't find
 ADD_CUSTOM_COMMAND(
@@ -122,12 +128,19 @@ ADD_CUSTOM_COMMAND(
 ENDIF(USE_CUDA)
 
 ADD_LIBRARY(_singa_wrap SHARED $<TARGET_OBJECTS:singa_objects>  ${python_srcs} ${proto_pys} ${global_cuda_objs})
-TARGET_LINK_LIBRARIES(_singa_wrap ${SINGA_LINKER_LIBS} ${PYTHON_LIBRARIES})
-TARGET_INCLUDE_DIRECTORIES(_singa_wrap PRIVATE ${PYTHON_INCLUDE_DIRS})
-SET_TARGET_PROPERTIES(_singa_wrap
-PROPERTIES PREFIX ""
-LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/python/singa
-)
+
+# For MacOS Python3.6 is already linked into python executable, hence no need to link python3.6 into Singa.
+IF(APPLE)
+    TARGET_LINK_LIBRARIES(_singa_wrap ${SINGA_LINKER_LIBS})    
+    SET_TARGET_PROPERTIES(_singa_wrap PROPERTIES PREFIX "" 
+                                                 LINK_FLAGS "-undefined dynamic_lookup" 
+                                      LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/python/singa)
+ELSE()
+    TARGET_LINK_LIBRARIES(_singa_wrap ${SINGA_LINKER_LIBS} ${PYTHON_LIBRARIES})    
+    SET_TARGET_PROPERTIES(_singa_wrap PROPERTIES PREFIX "" LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/python/singa)
+ENDIF()
+
+TARGET_INCLUDE_DIRECTORIES(_singa_wrap PRIVATE ${PYTHON_INCLUDE_DIRS} ${NUMPY_INCLUDE_DIR})
 
 #SETUP
 SET(SETUP_PY_IN "setup.py.in")

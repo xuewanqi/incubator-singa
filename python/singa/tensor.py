@@ -65,6 +65,7 @@ from .proto import core_pb2
 from . import singa_wrap as singa
 from .device import get_default_device
 
+
 int32 = core_pb2.kInt
 float32 = core_pb2.kFloat32
 CTensor = singa.Tensor
@@ -107,7 +108,8 @@ class Tensor(object):
         self.requires_grad = requires_grad
         self.stores_grad = stores_grad
         if creator is None:
-            self.creator = Dummy(self)
+            from . import autograd
+            self.creator = autograd.Dummy(self)
         else:
             self.creator = creator
 
@@ -780,9 +782,9 @@ def softmax(t, out=None):
         the result Tensor
     '''
     if out is None:
-        return _call_singa_func(singa.SoftMax, t.singa_tensor)
+        return _call_singa_func(singa.SoftMax, t.data)
     else:
-        singa.SoftMax(t.singa_tensor, out.singa_tensor)
+        singa.SoftMax(t.data, out.data)
         return out
 
 
@@ -937,6 +939,142 @@ def mult(A, B, C=None, alpha=1.0, beta=0.0):
         singa.MultWithScale(alpha, A.data, B.data,
                             beta, C.data)
         return C
+
+
+def einsum(ops, *args):
+    '''
+    function TODO list to finish the function in cpp(just like numpy function):
+    1.sum(A,axis = None)
+    2.repeat(A,repeats)
+    3.transpose(A,axes = None)
+    Do the matrix to matrix einsum calculation according to the operands
+    Warning : this function could only support two matrix' einsum calcultion
+    Args:
+        ops(string):
+            the string specifies the subscripts for summation such as 'ki,kj->kij'
+            Here all the 26 lowercase letter can be used here.
+        arg(list of array_like):
+                These are the tensors for the operation,but here only support two tensors.
+    Returns: Singa.Tensor
+        the output matirx of the einsum calculation
+    The best way to understand this function is to try the examples below:
+    A_ = [0,1,2,3,4,5,6,7,8,9,10,11]
+    A = A_.reshape(4,3)
+    B = A_.reshape(3,4)
+
+    Here this einsum calculation is the same as normal 'mult'
+    Res = einsum('ij,jk->ik',A,B)
+
+    >>> [[ 20  23  26  29]
+         [ 56  68  80  92]
+         [ 92 113 134 155]
+         [128 158 188 218]]
+
+    A_ = [0,1,2,3,4,5,6,7,8,9,10,11]
+    A = A_.reshape(4,3)
+    B = A_.reshape(4,3)
+
+    Here the einsum calculation is the same as normol 'eltwise_mult'
+    Res = einsum('ki,ki->ki',A,B)
+
+    >>> [[  0   1   4]
+         [  9  16  25]
+         [ 36  49  64]
+         [ 81 100 121]]
+
+    A = [0,1,2,3,4,5,6,7,8,9,10,11]
+    A = A.reshape(4,3)
+
+    Res = einsum('ki,kj->kij',A,A)
+    >>> [[[  0   0   0]
+          [  0   1   2]
+          [  0   2   4]]
+         [[  9  12  15]
+          [ 12  16  20]
+          [ 15  20  25]]
+         [[ 36  42  48]
+          [ 42  49  56]
+          [ 48  56  64]]
+         [[ 81  90  99]
+          [ 90 100 110]
+          [ 99 110 121]]]
+
+    A_ = [0,1,2,3,4,5,6,7,8,9,10,11]
+    A = A_.reshape(3,2,2)
+
+    Res = einsum('kia,kja->kij',A,A)
+    >>> [[[  1   3]
+          [  3  13]]
+         [[ 41  59]
+          [ 59  85]]
+         [[145 179]
+          [179 221]]]
+    '''
+
+    if len(ops) == 0:
+        raise ValueError("No input operands")
+
+    if len(args) != 2:
+        raise ValueError("Currently only two operands are supported")
+    # to get the input and output ops
+    inputops, outputops = ops.split('->')
+    inputops = inputops.split(',')
+
+    # to get the two input tensor
+    A = args[0]
+    B = args[1]
+
+    if A.ndim() != len(inputops[0]) or B.ndim() != len(inputops[1]):
+        raise ValueError("input dim doesn't match operands")
+
+    # to get the indices in input but not in output
+    sums = sorted(list((set(inputops[0]) | set(inputops[1])) - set(outputops)))
+
+    # to get the indices that A and B use to broadcast to each other
+    broadcast_A = sorted(list(set(inputops[1]) - set(inputops[0])))
+    broadcast_B = sorted(list(set(inputops[0]) - set(inputops[1])))
+    # to get all the indices in input
+    outputall = sorted(list(set(inputops[0]) | set(inputops[1])))
+
+    # Map indices to axis integers
+    sums = [outputall.index(x) for x in sums]
+    broadcast_idA = [inputops[1].find(x) for x in broadcast_A]
+    broadcast_idB = [inputops[0].find(x) for x in broadcast_B]
+
+    broadcast_a = [B.shape[x] for x in broadcast_idA]
+    broadcast_b = [A.shape[x] for x in broadcast_idB]
+
+    # get the the transpose and reshape parameter used in the elementwise
+    # calculation
+    transpose_A = [(list(inputops[0]) + broadcast_A).index(x)
+                   for x in outputall]
+    transpose_B = [(list(inputops[1]) + broadcast_B).index(x)
+                   for x in outputall]
+
+    reshape_A = list(A.shape) + broadcast_a
+    reshape_B = list(B.shape) + broadcast_b
+
+    A_ = to_numpy(A)
+    B_ = to_numpy(B)
+
+    mult_A = np.repeat(A_, np.product(broadcast_a)).reshape(
+        reshape_A).transpose(transpose_A)
+    mult_B = np.repeat(B_, np.product(broadcast_b)).reshape(
+        reshape_B).transpose(transpose_B)
+
+    if mult_A.shape != mult_B.shape:
+        raise ValueError("Error: matrix dimension mismatch")
+    res_ = np.multiply(mult_A, mult_B)
+
+    # reduce the axis and find the final transpose for the output
+    sum_R = sorted(sums, reverse=True)
+    for i in sum_R:
+        res_ = res_.sum(axis=i)
+    transpose_res = [sorted(list(outputops)).index(x) for x in list(outputops)]
+    res_ = res_.transpose(transpose_res)
+    res = from_numpy(res_)
+
+    return res
 
 
 def div(lhs, rhs, ret=None):
@@ -1118,328 +1256,3 @@ def copy_from_numpy(data, np_array):
         data.CopyIntDataFromHostPtr(np_array)
     else:
         print('Not implemented yet for ', dt)
-
-
-class Operation(object):
-    '''
-    An operation includes the forward and backward function of
-    tensor calculation.
-
-    To add a specific operation Xxxx, subclass Operation and implement
-    forward() and backward(). Then implement a function xxxx which creates
-    a Xxxx instance and calls __call__ to do forward. The autograd engine
-    is able to do backward propagation by calling the backward() of Xxxx
-    automatically. Notice that the tensors are CTensor. NOT Python Tensor.
-    The arguments of forward() and backward() should only include CTensor args; 
-    '''
-
-    def __call__(self, *xs):
-        return self._do_forward(*xs)
-
-    def _do_forward(self, *xs):
-        '''
-        Do not call this function from user code. It is called by __call__().
-
-        Args:
-            xs, Tensor instance(s)
-
-        Returns:
-            Tensor instance(s)
-        '''
-        # TODO add the pre hook
-        assert all([isinstance(x, Tensor) for x in xs]), \
-            'xs should include only Tensor instances'
-
-        # need to do backward if any of its input arg needs gradient
-        self.requires_grad = any([x.requires_grad for x in xs])
-
-        self.src = []
-        for x in xs:
-            if x.stores_grad:
-                # store the tensor whose gradient needs be returned in
-                # backward(), e.g. if x is parameter
-                self.src.append((x.creator, id(x), x, x.stores_grad))
-            else:
-                # for intermediate tensors, they will be released soon;
-                # no need to store them --> use None
-                self.src.append((x.creator, id(x), None, x.stores_grad))
-
-        # get the CTensor (data) if the input arg is Tensor
-        xs = tuple(x.data for x in xs)
-        ys = self.forward(*xs)
-        if not isinstance(ys, tuple):
-            ys = (ys,)
-        # create Tensor based on CTensor(data);
-        # assume outputs are all Tensor instances
-        ys = tuple(Tensor(device=y.device,
-                          data=y,
-                          requires_grad=self.requires_grad,
-                          creator=self) for y in ys)
-        # map from python id to output index
-        self.y_id2idx = {id(y): i for i, y in enumerate(ys)}
-        # TODO add the post hook
-        return ys
-
-    def _do_backward(self, *dys):
-        dxs = self.backward(*dys)
-        if not isinstance(dxs, tuple):
-            dxs = (dxs,)
-        return dxs
-
-    def forward(self, *xs):
-        '''Forward propagation.
-
-        Args:
-            xs: input args consisting of only CTensors.
-
-        Returns:
-            CTensor instance(s)
-        '''
-        raise NotImplementedError
-
-    def backward(self, *dys):
-        ''' Backward propagation.
-
-        Args:
-            dys: input args consisting of only CTensors.
-
-        Returns:
-            CTensor instance(s)
-        '''
-        raise NotImplementedError
-
-
-class Dummy(Operation):
-    '''Dummy operation whice serves as a placehoder for autograd
-
-    Args:
-        name(string): set it for debug
-    '''
-
-    def __init__(self, tensor, name=None):
-        self.name = name
-        self.src = []
-        self.y_id2idx = {id(tensor): 0}
-        self.requires_grad = False
-
-
-class ReLU(Operation):
-
-    def forward(self, x):
-        '''
-        Args:
-            x(CTensor): input tensor
-
-        Returns:
-            a new CTensor whose element y = x if x >= 0; otherwise 0;
-        '''
-        self.input = x
-        return singa.ReLU(x)
-
-    def backward(self, dy):
-        '''
-        Args:
-            dy(CTensor): dL / dy
-
-        Returns:
-            dx(CTensor): dL / dx = dy if x >= 0; otherwise 0;
-        '''
-        dx = singa.GTFloat(self.input, 0.0)
-        return singa.__mul__(dy, dx)
-
-
-def relu(x):
-    return ReLU()(x)[0]
-
-
-class Matmul(Operation):
-    '''For matrix multiplication'''
-
-    def forward(self, x, w):
-        '''Do forward propgation.
-
-        Store the x(or w) if w(or x) requires gradient.
-
-        Args:
-            x (CTensor): matrix
-            w (CTensor): matrix
-
-        Returns:
-            a CTensor for the result
-        '''
-        self.input = (x, w)
-        return singa.Mult(x, w)
-
-    def backward(self, dy):
-        '''
-        Args:
-            dy (CTensor): data for the dL / dy, L is the loss
-
-        Returns:
-            a tuple for (dx, dw)
-        '''
-        return singa.Mult(dy, self.input[1].T()), \
-            singa.Mult(self.input[0].T(), dy)
-
-
-def matmul(x, w):
-    return Matmul()(x, w)[0]
-
-
-class AddBias(Operation):
-    '''
-    Add Bias to each row / column of the Tensor, depending on the parameter axis.
-    '''
-
-    def __init__(self, axis=0):
-        '''
-        To indicate the calculation axis, 0 for row, 1 for column.
-
-        Args:
-            axis: 0 or 1, default is 0.
-        '''
-        self.axis = axis
-
-    def forward(self, x, b):
-        '''
-        Args:
-            x: matrix.
-            b: bias to be added.
-
-        Return:
-            the result Tensor
-        '''
-        if self.axis == 0:
-            singa.AddRow(b, x)
-        elif self.axis == 1:
-            singa.AddColumn(b, x)
-        return x
-
-    def backward(self, dy):
-        '''
-        Args:
-            dy (CTensor): data for the dL / dy, L is the loss.
-
-        Return:
-            a tuple for (db, dx), db is data for dL / db, dx is data
-            for dL / dx.
-        '''
-        if self.axis == 0:
-            return dy, singa.Sum(dy, 0)
-        elif self.axis == 1:
-            return dy, singa.Sum(dy, 0)
-
-
-def add_bias(x, b, axis=0):
-    return AddBias(axis)(x, b)[0]
-
-
-class SoftMax(Operation):
-    '''
-    Apply SoftMax for each row of the Tensor or each column of the Tensor
-    according to the parameter axis.
-    '''
-
-    def __init__(self, axis=0):
-        self.axis = axis
-
-    def forward(self, x):
-        '''
-        Args:
-            x(data): the input 1d or 2d tensor
-
-        Returns:
-            the result Tensor
-        '''
-        if self.axis == 1:
-            x = x.T()
-        self.output = singa.SoftMax(x)
-        if self.axis == 0:
-            return self.output
-        elif self.axis == 1:
-            return self.output.T()
-
-    def backward(self, dy):
-        '''
-        Args:
-            dy (CTensor): data for the dL / dy, L is the loss
-
-        Returns:
-            dx (Ctensor): data for the dL / dx, L is the loss,
-            x is the input of current Opertion
-        '''
-        # calculations are made on numpy array
-        if self.axis == 1:
-            dy = dy.T()
-        grad = ctensor2numpy(dy)
-        output = ctensor2numpy(self.output)
-        out_1 = np.einsum('ki,ki->ki', grad, output)
-        medium_out = np.einsum('ki,kj->kij', output, output)
-        out_2 = np.einsum('kij,kj->ki', medium_out, grad)
-        out = out_1 - out_2
-        dx = CTensor(out_1.shape)
-        dx.CopyFloatDataFromHostPtr(out.flatten())
-        if self.axis == 0:
-            return dx
-        elif self.axis == 1:
-            return dx.T()
-
-
-def soft_max(x, axis=0):
-    return SoftMax(axis)(x)[0]
-
-
-class CrossEntropy(Operation):
-    '''
-    Calculte CrossEntropy loss for a batch of training data.
-
-    '''
-
-    def forward(self, x, t):
-        '''
-        Args:
-            x (CTensor): 1d or 2d tensor, the prediction data(output) of current network.
-            t (CTensor): 1d or 2d tensor, the target data for training.
-
-        Returns:
-            loss (CTensor): scalar.
-        '''
-        loss = CTensor((1,))
-        loss_data = -singa.SumAsFloat(singa.__mul__(t, singa.Log(x)))
-        loss.SetFloatValue(loss_data / x.shape()[0])
-        self.x = x
-        self.t = t
-        self.input = (x, t)
-        return loss
-
-    def backward(self, dy=1.0):
-        '''
-        Args:
-            dy (float or CTensor): scalar, accumulate gradient from outside of current network, usually
-            equal to 1.0
-
-        Returns:
-            dx (CTensor): data for the dL /dx, L is the loss, x is the output of current network.
-            note that this is true for dy = 1.0
-        '''
-        dx = singa.__div__(self.t, self.x)
-        dx *= float(-1 / self.x.shape()[0])
-        if isinstance(dy, float):
-            # dtype of dy: float
-            dx *= dy
-            return dx, None
-        elif isinstance(dy, CTensor):
-            pass  # TODO, broadcast elementwise multiply seems not support
-
-
-def cross_entropy(y, t):
-    return CrossEntropy()(y, t)[0]
-
-
-def ctensor2numpy(x):
-    '''
-    To be used in SoftMax Operation.
-    Convert a singa_tensor to numpy_tensor.
-    '''
-    np_array = x.GetFloatValue(int(x.Size()))
-    return np_array.reshape(x.shape())
