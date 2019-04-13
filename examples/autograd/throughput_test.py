@@ -225,7 +225,7 @@ def resnet152(pretrained=False, **kwargs):
 
 
 if __name__ == '__main__':
-    model = resnet18()
+    model = resnet50()
     print('Start intialization............')
     dev = device.create_cuda_gpu_on(0)
     #dev = device.create_cuda_gpu()
