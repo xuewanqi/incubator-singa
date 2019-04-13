@@ -29,14 +29,26 @@ import numpy as np
 from tqdm import trange
 
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-           'resnet152']
+__all__ = [
+    "ResNet",
+    "resnet18",
+    "resnet34",
+    "resnet50",
+    "resnet101",
+    "resnet152",
+]
 
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return autograd.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                           padding=1, bias=False)
+    return autograd.Conv2d(
+        in_planes,
+        out_planes,
+        kernel_size=3,
+        stride=stride,
+        padding=1,
+        bias=False,
+    )
 
 
 class BasicBlock(autograd.Layer):
@@ -76,14 +88,16 @@ class Bottleneck(autograd.Layer):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         self.conv1 = autograd.Conv2d(
-            inplanes, planes, kernel_size=1, bias=False)
+            inplanes, planes, kernel_size=1, bias=False
+        )
         self.bn1 = autograd.BatchNorm2d(planes)
-        self.conv2 = autograd.Conv2d(planes, planes, kernel_size=3,
-                                     stride=stride,
-                                     padding=1, bias=False)
+        self.conv2 = autograd.Conv2d(
+            planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
         self.bn2 = autograd.BatchNorm2d(planes)
         self.conv3 = autograd.Conv2d(
-            planes, planes * self.expansion, kernel_size=1, bias=False)
+            planes, planes * self.expansion, kernel_size=1, bias=False
+        )
         self.bn3 = autograd.BatchNorm2d(planes * self.expansion)
 
         self.downsample = downsample
@@ -113,15 +127,14 @@ class Bottleneck(autograd.Layer):
 
 
 class ResNet(autograd.Layer):
-
     def __init__(self, block, layers, num_classes=1000):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = autograd.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                                     bias=False)
+        self.conv1 = autograd.Conv2d(
+            3, 64, kernel_size=7, stride=2, padding=3, bias=False
+        )
         self.bn1 = autograd.BatchNorm2d(64)
-        self.maxpool = autograd.MaxPool2d(
-            kernel_size=3, stride=2, padding=1)
+        self.maxpool = autograd.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
@@ -132,8 +145,13 @@ class ResNet(autograd.Layer):
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
-            conv = autograd.Conv2d(self.inplanes, planes * block.expansion,
-                                   kernel_size=1, stride=stride, bias=False)
+            conv = autograd.Conv2d(
+                self.inplanes,
+                planes * block.expansion,
+                kernel_size=1,
+                stride=stride,
+                bias=False,
+            )
             bn = autograd.BatchNorm2d(planes * block.expansion)
 
             def downsample(x):
@@ -149,6 +167,7 @@ class ResNet(autograd.Layer):
             for layer in layers:
                 x = layer(x)
             return x
+
         return forward
 
     def __call__(self, x):
@@ -224,11 +243,11 @@ def resnet152(pretrained=False, **kwargs):
     return model
 
 
-if __name__ == '__main__':
-    model = resnet18()
-    print('Start intialization............')
+if __name__ == "__main__":
+    model = resnet50()
+    print("Start intialization............")
     dev = device.create_cuda_gpu_on(0)
-    #dev = device.create_cuda_gpu()
+    # dev = device.create_cuda_gpu()
     niters = 200
     batch_size = 16
     IMG_SIZE = 224
@@ -242,6 +261,9 @@ if __name__ == '__main__':
     tx.copy_from_numpy(x)
     ty.copy_from_numpy(y)
 
+    import time
+
+    start = time.time()
     with trange(niters) as t:
         for b in t:
             x = model(tx)
@@ -249,4 +271,8 @@ if __name__ == '__main__':
             for p, g in autograd.backward(loss):
                 # print(p.shape, g.shape)
                 sgd.update(p, g)
-                #pass
+                # pass
+
+    end = time.time()
+    throughput = niters * batch_size / (end - start)
+    print("Throughput = {} per second".format(throughput))

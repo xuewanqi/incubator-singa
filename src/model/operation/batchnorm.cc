@@ -18,6 +18,8 @@
 * under the License.
 *
 ************************************************************/
+#include <locale>
+
 #include "./batchnorm.h"
 
 namespace singa {
@@ -235,10 +237,17 @@ const std::vector<Tensor> CpuBatchNormBackwardx(const BatchNormHandle &bnh,
 #ifdef USE_CUDNN
 CudnnBatchNormHandle::CudnnBatchNormHandle(const float momentum,
     const Tensor& input): BatchNormHandle(momentum, input) {
-  if (is_2d)
+  if (is_2d) {
     mode = CUDNN_BATCHNORM_PER_ACTIVATION;
-  else
+  }  else {
     mode = CUDNN_BATCHNORM_SPATIAL;
+    if (const char* env_p = std::getenv("CUDNN_BATCHNORM_ALG")) {
+      std::string alg = std::string(env_p);
+      std::transform(alg.begin(), alg.end(), alg.begin(), std::toupper);
+      if (alg == "CUDNN_BATCHNORM_SPATIAL_PERSISTENT")
+        mode = CUDNN_BATCHNORM_SPATIAL_PERSISTENT;
+    }
+  }
   DataType dtype = input.data_type();
   CUDNN_CHECK(cudnnCreateTensorDescriptor(&shape_desc));
   CUDNN_CHECK(cudnnCreateTensorDescriptor(&param_desc));

@@ -18,6 +18,8 @@
 * under the License.
 *
 ************************************************************/
+#include <locale>
+
 #include "./convolution.h"
 #include "../layer/convolution.h"
 
@@ -362,6 +364,10 @@ CudnnConvHandle::CudnnConvHandle(const Tensor &input,
   : ConvHandle(input, kernel_size, stride, padding, in_channels, out_channels,
                bias, groups) {
 
+  if (const char* env_p = std::getenv("CUDNN_CONV_ALG")) {
+    prefer = std::string(env_p);
+    std::transform(prefer.begin(), prefer.end(), prefer.begin(), std::tolower);
+  }
   DataType dtype = input.data_type();
   auto dev = input.device();
   Context *ctx = dev->context(0);
@@ -444,7 +450,7 @@ CudnnConvHandle::CudnnConvHandle(const Tensor &input,
                   &num_bp_data_alg, bp_data_perf));
     bp_data_alg = bp_data_perf[0].algo;
   } else {
-    LOG(FATAL) << "Preferred algorithm is not available!";
+    LOG(FATAL) << "Preferred algorithm is not available :" << prefer;
   }
 
   size_t fp_byte, bp_data_byte, bp_filter_byte;
