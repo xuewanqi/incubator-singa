@@ -367,6 +367,7 @@ CudnnConvHandle::CudnnConvHandle(const Tensor &input,
   if (const char* env_p = std::getenv("CUDNN_CONV_ALG")) {
     prefer = std::string(env_p);
     std::transform(prefer.begin(), prefer.end(), prefer.begin(), tolower);
+    LOG(INFO) << "CUDNN_CONV_ALG: " << prefer;
   }
   DataType dtype = input.data_type();
   auto dev = input.device();

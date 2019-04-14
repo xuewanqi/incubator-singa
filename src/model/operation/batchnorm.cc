@@ -246,6 +246,7 @@ CudnnBatchNormHandle::CudnnBatchNormHandle(const float momentum,
       std::transform(alg.begin(), alg.end(), alg.begin(), toupper);
       if (alg == "CUDNN_BATCHNORM_SPATIAL_PERSISTENT")
         mode = CUDNN_BATCHNORM_SPATIAL_PERSISTENT;
+      LOG(INFO) << " CUDNN_BATCHNORM_ALG: " << alg;
     }
   }
   DataType dtype = input.data_type();
