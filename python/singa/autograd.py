@@ -789,7 +789,7 @@ class _Conv2d(Operation):
         super(_Conv2d, self).__init__()
         self.handle = handle
 
-    def forward(self, x, W, b):
+    def forward(self, x, W, b=None):
         assert x.nDim() == 4, "The dimensions of input should be 4D."
 
         if training:
@@ -797,6 +797,8 @@ class _Conv2d(Operation):
                 self.inputs = (x, W, b)
             else:
                 self.inputs = (x, W)
+        if b is None:
+            b = CTensor([])
         if isinstance(self.handle, singa.CudnnConvHandle):
             return singa.GpuConvForward(x, W, b, self.handle)
         else:
@@ -818,7 +820,7 @@ class _Conv2d(Operation):
                 db = singa.GpuConvBackwardb(dy, self.inputs[2], self.handle)
                 return dx, dW, db
             else:
-                return dx, dW, None
+                return dx, dW #, None
         else:
             dx = singa.CpuConvBackwardx(
                 dy, self.inputs[1], self.inputs[0], self.handle
@@ -830,7 +832,7 @@ class _Conv2d(Operation):
                 db = singa.CpuConvBackwardb(dy, self.inputs[2], self.handle)
                 return dx, dW, db
             else:
-                return dx, dW, None
+                return dx, dW #, None
 
 def conv2d(handle, x, W, b=None):
     if b is None:
@@ -936,8 +938,10 @@ class Conv2d(Layer):
 
     def __call__(self, x):
         assert x.shape[1] == self.in_channels, "in_channels dismatched"
-
-        self.device_check(x, self.W, self.b)
+        if self.bias:
+            self.device_check(x, self.W, self.b)
+        else:
+            self.device_check(x, self.W)
 
         if x.device.id() == -1:
             if self.group != 1:
@@ -1089,25 +1093,27 @@ class BatchNorm2d(Layer):
 
 
 class _BatchNorm2d(Operation):
-    def __init__(self, handle, name=None):
+    def __init__(self, handle, running_mean, running_var, name=None):
         super(_BatchNorm2d, self).__init__(name)
         self.handle = handle
+        self.running_mean = running_mean.data
+        self.running_var = running_var.data
 
-    def forward(self, x, scale, bias, running_mean, running_var):
-        self.running_mean = running_mean
-        self.running_var = running_var
+    def forward(self, x, scale, bias):
         if training:
 
-            if isinstance(self.handle, singa.BatchNormHandle):
-                y, mean, var = singa.CpuBatchNormForwardTraining(
-                    self.handle, x, scale, bias, running_mean, running_var
-                )
-                self.cache = (x, scale, mean, var)
-            else:
+            if isinstance(self.handle, singa.CudnnBatchNormHandle):
                 y, mean, var = singa.GpuBatchNormForwardTraining(
-                    self.handle, x, scale, bias, running_mean, running_var
+                    self.handle, x, scale, bias, self.running_mean, self.running_var
                 )
 
+                self.cache = (x, scale, mean, var)
+            else:
+
+                y, mean, var = singa.CpuBatchNormForwardTraining(
+                    self.handle, x, scale, bias, self.running_mean, self.running_var
+                )
+ 
                 self.cache = (x, scale, mean, var)
         else:
             if isinstance(self.handle, singa.CudnnBatchNormHandle):
@@ -1116,8 +1122,8 @@ class _BatchNorm2d(Operation):
                     x,
                     scale,
                     bias,
-                    running_mean,
-                    running_var,
+                    self.running_mean,
+                    self.running_var,
                 )
             else:
                 y = singa.CpuBatchNormForwardInference(
@@ -1125,8 +1131,8 @@ class _BatchNorm2d(Operation):
                     x,
                     scale,
                     bias,
-                    running_mean,
-                    running_var,
+                    self.running_mean,
+                    self.running_var,
                 )
 
         return y
@@ -1150,7 +1156,7 @@ class _BatchNorm2d(Operation):
 
 
 def batchnorm_2d(handle, x, scale, bias, running_mean, running_var):
-    return _BatchNorm2d(handle)(x, scale, bias, running_mean, running_var)[0]
+    return _BatchNorm2d(handle, running_mean, running_var)(x, scale, bias)[0]
 
 
 class _Pooling2d(Operation):

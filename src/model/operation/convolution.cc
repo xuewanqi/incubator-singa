@@ -18,7 +18,7 @@
 * under the License.
 *
 ************************************************************/
-#include <locale>
+#include <cctype>
 
 #include "./convolution.h"
 #include "../layer/convolution.h"
@@ -360,13 +360,13 @@ CudnnConvHandle::CudnnConvHandle(const Tensor &input,
                                  const std::vector<size_t>& stride, const std::vector<size_t>& padding,
                                  const size_t in_channels, const size_t out_channels, const bool bias,
                                  const size_t groups,
-                                 const size_t workspace_byte_limit, const std::string& prefer)
+                                 const size_t workspace_byte_limit, const std::string& prefer_)
   : ConvHandle(input, kernel_size, stride, padding, in_channels, out_channels,
                bias, groups) {
-
+  std::string prefer = prefer_;
   if (const char* env_p = std::getenv("CUDNN_CONV_ALG")) {
     prefer = std::string(env_p);
-    std::transform(prefer.begin(), prefer.end(), prefer.begin(), std::tolower);
+    std::transform(prefer.begin(), prefer.end(), prefer.begin(), tolower);
   }
   DataType dtype = input.data_type();
   auto dev = input.device();

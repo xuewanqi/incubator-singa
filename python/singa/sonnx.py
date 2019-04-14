@@ -390,31 +390,30 @@ def to_onnx_model(inputs, y, model_name="sonnx"):
             # (<singa.autograd.Dummy object at 0x7fd5ec09c590>, 140556764824784, None, False),
             # (<singa.autograd.Dummy object at 0x7fd5ec09c690>, 140556764825040, None, False)])
             # two dummy operators do not have values, so take the values from handle
-            """
-            dummy0 = tensor.to_numpy(
+            mean = tensor.to_numpy(
                 tensor.Tensor(
                     device=op.running_mean.device(), data=op.running_mean
                 )
             )
-            dummy1 = tensor.to_numpy(
+            var = tensor.to_numpy(
                 tensor.Tensor(
                     device=op.running_var.device(), data=op.running_var
                 )
             )
-            dummy0 = helper.make_node(
+            mean = helper.make_node(
                 "Constant",
                 inputs=[],
                 outputs=[inputs[3]],
-                value=numpy_helper.from_array(dummy0),
+                value=numpy_helper.from_array(mean),
             )
-            dummy1 = helper.make_node(
+            var = helper.make_node(
                 "Constant",
                 inputs=[],
                 outputs=[inputs[4]],
-                value=numpy_helper.from_array(dummy1),
+                value=numpy_helper.from_array(var),
             )
-            node.append(dummy0)
-            node.append(dummy1)
+            node.append(mean)
+            node.append(var)
             """
         else:
             singa2onnx = {

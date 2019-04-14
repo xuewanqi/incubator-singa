@@ -18,7 +18,7 @@
 * under the License.
 *
 ************************************************************/
-#include <locale>
+#include <cctype>
 
 #include "./batchnorm.h"
 
@@ -243,7 +243,7 @@ CudnnBatchNormHandle::CudnnBatchNormHandle(const float momentum,
     mode = CUDNN_BATCHNORM_SPATIAL;
     if (const char* env_p = std::getenv("CUDNN_BATCHNORM_ALG")) {
       std::string alg = std::string(env_p);
-      std::transform(alg.begin(), alg.end(), alg.begin(), std::toupper);
+      std::transform(alg.begin(), alg.end(), alg.begin(), toupper);
       if (alg == "CUDNN_BATCHNORM_SPATIAL_PERSISTENT")
         mode = CUDNN_BATCHNORM_SPATIAL_PERSISTENT;
     }
