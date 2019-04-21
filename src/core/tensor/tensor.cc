@@ -858,23 +858,33 @@ Tensor RowMax(const Tensor &in) {
   return ret;
 }
 
+// void SoftMax(const Tensor &in, Tensor *out) {
+//   CHECK_LE(in.nDim(), 2u);
+//   out->CopyData(in);
+//   size_t nrow = 1, ncol = in.Size(), size = ncol;
+//   if (in.nDim() == 2u) {
+//     nrow = in.shape(0);
+//     ncol = size / nrow;
+//     out->Reshape(Shape{nrow, ncol});
+//   }
+//   Tensor tmp = RowMax(*out);
+//   SubColumn(tmp, out);
+//   Exp(*out, out);
+
+//   SumColumns(*out, &tmp);
+//   DivColumn(tmp, out);
+//   out->Reshape(in.shape());
+// }
+
 void SoftMax(const Tensor &in, Tensor *out) {
   CHECK_LE(in.nDim(), 2u);
-  out->CopyData(in);
-  size_t nrow = 1, ncol = in.Size(), size = ncol;
-  if (in.nDim() == 2u) {
-    nrow = in.shape(0);
-    ncol = size / nrow;
-    out->Reshape(Shape{nrow, ncol});
-  }
-  Tensor tmp = RowMax(*out);
-  SubColumn(tmp, out);
-  Exp(*out, out);
-
-  SumColumns(*out, &tmp);
-  DivColumn(tmp, out);
-  out->Reshape(in.shape());
+  TYPE_LANG_SWITCH(in.data_type(), DType, in.device()->lang(), Lang, {
+    out->device()->Exec([in, out](Context * ctx) {
+      SoftMax<DType, Lang>(in, out, ctx);
+    }, {in.block(), out->block()}, {out->block()});
+  });
 }
+
 
 void AddColumn(const Tensor &v, Tensor *M) { AddColumn(1, 1, v, M); }
 /// Add column 'v' onto each column of matrix M;
