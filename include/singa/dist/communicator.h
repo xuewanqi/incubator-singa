@@ -59,19 +59,19 @@ public:
 };
 
 
-// void synch(Tensor &t1, Tensor &t2);
-void synch(Tensor &t1, Tensor &t2){
-  Communicator c(2);
-  void* addr1=t1.block()->mutable_data();
-  void* addr2=t2.block()->mutable_data();
+void synch(Tensor &t1, Tensor &t2);
+// void synch(Tensor &t1, Tensor &t2){
+//   Communicator c(2);
+//   void* addr1=t1.block()->mutable_data();
+//   void* addr2=t2.block()->mutable_data();
   
-  void** addr;
-  addr[0]=addr1;
-  addr[1]=addr2;
+//   void** addr;
+//   addr[0]=addr1;
+//   addr[1]=addr2;
 
-  c.allReduce(1, addr, addr);
-  c.wait();
-}
+//   c.allReduce(1, addr, addr);
+//   c.wait();
+// }
 
 }
 #endif

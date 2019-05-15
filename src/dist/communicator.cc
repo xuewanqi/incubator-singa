@@ -1,6 +1,6 @@
 
 #include "singa/dist/communicator.h"
-
+#include<iostream>
 namespace singa{
 
 static uint64_t getHostHash(const char* string) {
@@ -105,16 +105,21 @@ Communicator::~Communicator(){
 }
 
   
-// void synch(Tensor &t1, Tensor &t2){
-//   Communicator c(2);
-//   void* addr1=t1.block()->mutable_data();
-//   void* addr2=t2.block()->mutable_data();
+void synch(Tensor &t1, Tensor &t2){
+
+  MPICHECK(MPI_Init(NULL, NULL));
+  Communicator c(2);
+  std::cout<<"pass1"<<std::endl;
+  void* addr1=t1.block()->mutable_data();
+  void* addr2=t2.block()->mutable_data();
   
-//   void** addr;
-//   addr[0]=addr1;
-//   addr[1]=addr2;
+  void** addr;
+  addr[0]=addr1;
+  addr[1]=addr2;
+  std::cout<<"pass2"<<std::endl;
+  c.allReduce(1, addr, addr);
+  c.wait();
+  MPICHECK(MPI_Finalize());
+}
 
-//   c.allReduce(1, addr, addr);
-//   c.wait();
-// }
-
+}
